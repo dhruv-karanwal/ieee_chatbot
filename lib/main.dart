@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
 import 'screens/chatbot_screen.dart';
+import 'screens/pdf_screen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const IEEEChatbotApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class IEEEChatbotApp extends StatelessWidget {
+  const IEEEChatbotApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: const ChatbotScreen(),
+      title: 'IEEE AI Chatbot',
+      theme: ThemeData(
+        primarySwatch: Colors.indigo,
+        scaffoldBackgroundColor: Colors.grey[50],
+      ),
+      home: const ChatScreen(),
+      routes: {'/pdf': (context) => const PdfScreen()},
     );
   }
 }

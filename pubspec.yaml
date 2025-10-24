@@ -30,8 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
   google_generative_ai: ^0.4.4
+  file_picker: ^8.0.0
+  syncfusion_flutter_pdf: ^26.1.42
   cupertino_icons: ^1.0.6
+  intl: ^0.19.0
 
 
 dev_dependencies:
