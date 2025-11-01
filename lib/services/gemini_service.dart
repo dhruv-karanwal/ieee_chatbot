@@ -39,6 +39,13 @@ Club data:
  - App Head: Vansh Bhatt
  - Web Head: Harsh Mehta
  - AI Head: Pratham Tomar
+
+social media links:
+ - Instagram: https://www.instagram.com/ieee_vit_studentbranch?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==
+ - LinkedIn: https://www.linkedin.com/company/ieee-student-branch-vit-pune/
+ - Website: https://ieeevitpune.com/
+
+When answering, keep responses concise and relevant to IEEE VIT Pune.
 """;
 
   /// Send a general chat message

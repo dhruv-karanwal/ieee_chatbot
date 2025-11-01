@@ -1,21 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/message_model.dart';
 
 class ChatBubble extends StatelessWidget {
   final Message message;
 
-  const ChatBubble({super.key, required this.message});
+  const ChatBubble({
+    super.key,
+    required this.message,
+    required Null Function(dynamic fileName) onPdfTap,
+  });
+
+  Future<void> _onOpen(LinkableElement link) async {
+    final uri = Uri.parse(link.url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isUser = message.isUser;
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser) ...[
@@ -65,29 +80,39 @@ class ChatBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (message.type == MessageType.pdf) _buildPdfAttachment(),
-                  if (message.type == MessageType.image) _buildImageAttachment(),
+                  if (message.type == MessageType.image)
+                    _buildImageAttachment(),
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          message.text,
+                        // 🔗 Replaced Text() with Linkify()
+                        Linkify(
+                          onOpen: _onOpen,
+                          text: message.text,
                           style: TextStyle(
-                            color: isUser 
-                                ? theme.colorScheme.onPrimary 
+                            color: isUser
+                                ? theme.colorScheme.onPrimary
                                 : theme.colorScheme.onSurfaceVariant,
                             fontSize: 16,
                             height: 1.4,
+                          ),
+                          linkStyle: TextStyle(
+                            color: isUser
+                                ? Colors.yellowAccent
+                                : theme.colorScheme.primary,
+                            decoration: TextDecoration.underline,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           DateFormat('HH:mm').format(message.timestamp),
                           style: TextStyle(
-                            color: isUser 
+                            color: isUser
                                 ? theme.colorScheme.onPrimary.withOpacity(0.7)
-                                : theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                                : theme.colorScheme.onSurfaceVariant
+                                      .withOpacity(0.6),
                             fontSize: 12,
                           ),
                         ),
@@ -155,10 +180,7 @@ class ChatBubble extends StatelessWidget {
                 const SizedBox(height: 4),
                 const Text(
                   'PDF Document',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ],
             ),
@@ -185,11 +207,7 @@ class ChatBubble extends StatelessWidget {
               color: Colors.blue.withOpacity(0.2),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              Icons.image,
-              color: Colors.blue,
-              size: 24,
-            ),
+            child: const Icon(Icons.image, color: Colors.blue, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -208,10 +226,7 @@ class ChatBubble extends StatelessWidget {
                 const SizedBox(height: 4),
                 const Text(
                   'Image File',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ],
             ),

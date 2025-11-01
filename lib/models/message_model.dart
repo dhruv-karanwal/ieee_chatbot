@@ -18,9 +18,4 @@ class Message {
   }) : timestamp = timestamp ?? DateTime.now();
 }
 
-enum MessageType {
-  text,
-  pdf,
-  image,
-  system,
-}
+enum MessageType { text, pdf, image, system }

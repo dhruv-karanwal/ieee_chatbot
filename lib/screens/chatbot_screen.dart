@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/message_model.dart';
 import '../widgets/chat_bubble.dart';
 import '../services/gemini_service.dart';
@@ -18,6 +19,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final GeminiService gemini = GeminiService();
+  final supabase = Supabase.instance.client;
 
   bool _isLoading = false;
   String? pdfText;
@@ -36,6 +38,28 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _addWelcomeMessage();
+    testSupabaseConnection();
+  }
+
+  Future<void> testSupabaseConnection() async {
+    try {
+      final response = await supabase.from('faqs').select().limit(1);
+      debugPrint('✅ Supabase connected successfully: $response');
+    } catch (e) {
+      debugPrint('❌ Supabase connection failed: $e');
+    }
+  }
+
+  Future<void> _saveMessageToSupabase(String sender, String message) async {
+    try {
+      await supabase.from('chats').insert({
+        'sender': sender,
+        'message': message,
+      });
+      debugPrint('💾 Message saved: [$sender] $message');
+    } catch (e) {
+      debugPrint('❌ Error saving message to Supabase: $e');
+    }
   }
 
   @override
@@ -59,6 +83,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _animationController.forward();
   }
 
+  String _cleanMarkdown(String text) {
+    return text
+        .replaceAll(RegExp(r'\*\*(.*?)\*\*'), r'\1')
+        .replaceAll(RegExp(r'\*(.*?)\*'), r'\1')
+        .replaceAll(RegExp(r'[*•\-\\]+\s*\d*\s*'), '')
+        .replaceAll(RegExp(r'#+ '), '')
+        .replaceAll(RegExp(r'\n{2,}'), '\n')
+        .trim();
+  }
+
+  // ✅ Basic Gemini-only chat logic
   void _sendMessage(String text) async {
     if (text.isEmpty) return;
 
@@ -67,15 +102,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _isLoading = true;
     });
     _scrollToBottom();
+    await _saveMessageToSupabase('user', text);
 
     try {
       final reply = await gemini.sendMessage(text);
       setState(() {
         _messages.add(
-          Message(text: reply, isUser: false, type: MessageType.text),
+          Message(
+            text: _cleanMarkdown(reply),
+            isUser: false,
+            type: MessageType.text,
+          ),
         );
         _isLoading = false;
       });
+      await _saveMessageToSupabase('bot', reply);
     } catch (e) {
       setState(() {
         _messages.add(
@@ -87,7 +128,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         );
         _isLoading = false;
       });
+      await _saveMessageToSupabase('bot', 'Error occurred while replying');
     }
+
     _controller.clear();
     _scrollToBottom();
   }
@@ -109,7 +152,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           _uploadedFileName = fileName;
         });
 
-        // Add PDF upload message
         setState(() {
           _messages.add(
             Message(
@@ -120,6 +162,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           );
         });
+        await _saveMessageToSupabase('user', "📄 Uploaded: $fileName");
 
         try {
           pdfText = await PdfService.extractTextFromPdf(pdfFile);
@@ -128,13 +171,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           setState(() {
             _messages.add(
               Message(
-                text: "📄 PDF Analysis Complete!\n\n$summary",
+                text: "📄 PDF Analysis Complete!\n\n${_cleanMarkdown(summary)}",
                 isUser: false,
                 type: MessageType.text,
               ),
             );
             _isLoading = false;
           });
+          await _saveMessageToSupabase(
+            'bot',
+            "📄 PDF Analysis Complete! $summary",
+          );
         } catch (e) {
           setState(() {
             _messages.add(
@@ -147,6 +194,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             );
             _isLoading = false;
           });
+          await _saveMessageToSupabase('bot', "❌ Error processing PDF.");
         }
         _scrollToBottom();
       }
@@ -181,15 +229,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _isLoading = true;
     });
     _scrollToBottom();
+    await _saveMessageToSupabase('user', question);
 
     try {
       final answer = await gemini.answerFromPdf(pdfText!, question);
       setState(() {
         _messages.add(
-          Message(text: answer, isUser: false, type: MessageType.text),
+          Message(
+            text: _cleanMarkdown(answer),
+            isUser: false,
+            type: MessageType.text,
+          ),
         );
         _isLoading = false;
       });
+      await _saveMessageToSupabase('bot', answer);
     } catch (e) {
       setState(() {
         _messages.add(
@@ -202,6 +256,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         );
         _isLoading = false;
       });
+      await _saveMessageToSupabase(
+        'bot',
+        "Error answering question about PDF.",
+      );
     }
     _scrollToBottom();
   }
@@ -220,295 +278,75 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        elevation: 0,
-        backgroundColor: theme.colorScheme.surface,
-        surfaceTintColor: Colors.transparent,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.primary.withOpacity(0.8),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.smart_toy, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "IEEE AI Chatbot",
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (_uploadedFileName != null)
-                  Text(
-                    "📄 (_uploadedFileName!)",
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
+        title: const Text("IEEE AI Chatbot"),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.picture_as_pdf,
-                  color: theme.colorScheme.onPrimaryContainer,
-                  size: 20,
-                ),
-              ),
-              onPressed: _pickPdf,
-              tooltip: "Upload PDF",
-            ),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf),
+            onPressed: () => Navigator.pushNamed(context, '/pdf'),
+            tooltip: "PDF Summarizer",
           ),
         ],
       ),
       body: Column(
         children: [
-          // Messages List
           Expanded(
-            child: _messages.isEmpty
-                ? _buildEmptyState()
-                : FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          child: ChatBubble(message: _messages[index]),
-                        );
-                      },
-                    ),
-                  ),
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16.0),
+                itemCount: _messages.length,
+                itemBuilder: (context, index) {
+                  final message = _messages[index];
+                  return ChatBubble(
+                    message: message,
+                    onPdfTap: (fileName) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Tapped on $fileName")),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
           ),
-
-          // Loading Indicator
           if (_isLoading)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        theme.colorScheme.primary,
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: LinearProgressIndicator(),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: InputDecoration(
+                      hintText: pdfText != null
+                          ? "Ask about the PDF or general question..."
+                          : "Type your message...",
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20.0),
                       ),
                     ),
+                    onSubmitted: _sendMessage,
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "AI is thinking...",
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // Input Area
-          Container(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              border: Border(
-                top: BorderSide(
-                  color: theme.colorScheme.outline.withOpacity(0.2),
-                  width: 1,
                 ),
-              ),
-            ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    // PDF Upload Button
-                    Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.attach_file,
-                          color: theme.colorScheme.onSecondaryContainer,
-                        ),
-                        onPressed: _pickPdf,
-                        tooltip: "Upload PDF",
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-
-                    // Text Input
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: theme.colorScheme.outline.withOpacity(0.3),
-                          ),
-                        ),
-                        child: TextField(
-                          controller: _controller,
-                          maxLines: null,
-                          textCapitalization: TextCapitalization.sentences,
-                          decoration: InputDecoration(
-                            hintText: pdfText != null
-                                ? "Ask about the PDF or type a message..."
-                                : "Type your message...",
-                            hintStyle: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant
-                                  .withOpacity(0.6),
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
-                          ),
-                          style: theme.textTheme.bodyLarge,
-                          onSubmitted: (text) {
-                            final trimmedText = text.trim();
-                            if (trimmedText.isNotEmpty) {
-                              if (pdfText != null &&
-                                  trimmedText.contains("?")) {
-                                _askAboutPdf(trimmedText);
-                              } else {
-                                _sendMessage(trimmedText);
-                              }
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-
-                    // Send Button
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            theme.colorScheme.primary,
-                            theme.colorScheme.primary.withOpacity(0.8),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: theme.colorScheme.primary.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                        ),
-                        onPressed: () {
-                          final text = _controller.text.trim();
-                          if (text.isNotEmpty) {
-                            if (pdfText != null && text.contains("?")) {
-                              _askAboutPdf(text);
-                            } else {
-                              _sendMessage(text);
-                            }
-                          }
-                        },
-                        tooltip: "Send message",
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.upload_file),
+                  onPressed: _pickPdf,
+                  tooltip: "Upload PDF",
                 ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primaryContainer,
-                  theme.colorScheme.primaryContainer.withOpacity(0.7),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Icon(
-              Icons.chat_bubble_outline,
-              size: 64,
-              color: theme.colorScheme.onPrimaryContainer,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            "Welcome to IEEE AI Chatbot",
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            "Start a conversation or upload a PDF document\nto get started with AI-powered assistance",
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: _pickPdf,
-            icon: const Icon(Icons.upload_file),
-            label: const Text("Upload PDF"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: () => _sendMessage(_controller.text),
+                  tooltip: "Send Message",
+                ),
+              ],
             ),
           ),
         ],
